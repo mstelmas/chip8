@@ -4,16 +4,20 @@ const RAM_SIZE: usize = 4096;
 
 pub struct Interconnect {
     ram: [u8; RAM_SIZE],
-    pub display: display::Display
+    display: display::Display
 }
 
 impl Interconnect {
     // TODO: inject display
-    pub fn new() -> Interconnect {
+    pub fn new(display: display::Display) -> Interconnect {
         Interconnect {
             ram: [0; RAM_SIZE],
-            display: display::Display::new()
+            display
         }
+    }
+
+    pub fn disdplay(&self) -> &display::Display {
+        &self.display
     }
 
     pub fn read_word(&self, location: u16) -> u16 {

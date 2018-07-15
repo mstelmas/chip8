@@ -1,4 +1,4 @@
-use super::{Cpu, Interconnect};
+use super::{Cpu, Interconnect, Display};
 
 const ROM_LOCATION: u16 = 0x200;
 
@@ -8,10 +8,10 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    pub fn new() -> Chip8 {
+    pub fn new(display: Display) -> Chip8 {
         Chip8 {
             cpu: Cpu::new(),
-            interconnect: Interconnect::new()
+            interconnect: Interconnect::new(display)
         }
     }
 
