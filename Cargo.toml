@@ -1,0 +1,8 @@
+[package]
+name = "chip8"
+version = "0.1.0"
+authors = ["mstelmas"]
+
+[dependencies]
+log = "0.4"
+env_logger = "0.5.10"
