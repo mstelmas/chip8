@@ -6,3 +6,4 @@ authors = ["mstelmas"]
 [dependencies]
 log = "0.4"
 env_logger = "0.5.10"
+sdl2 = "0.31.0"

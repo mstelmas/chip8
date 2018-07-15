@@ -1,13 +1,18 @@
+use super::display;
+
 const RAM_SIZE: usize = 4096;
 
 pub struct Interconnect {
-    ram: [u8; RAM_SIZE]
+    ram: [u8; RAM_SIZE],
+    pub display: display::Display
 }
 
 impl Interconnect {
+    // TODO: inject display
     pub fn new() -> Interconnect {
         Interconnect {
-            ram: [0; RAM_SIZE]
+            ram: [0; RAM_SIZE],
+            display: display::Display::new()
         }
     }
 
