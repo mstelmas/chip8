@@ -1,4 +1,5 @@
 use super::interconnect;
+use std::fmt;
 
 pub struct Cpu {
     v: [u8; 16],
@@ -7,6 +8,12 @@ pub struct Cpu {
     sp: u8,
 
     pub interconnect: interconnect::Interconnect
+}
+
+impl fmt::Debug for Cpu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PC: 0x{:x}, SP: 0x{:x}, V: {:?}", self.pc, self.sp, self.v)
+    }
 }
 
 impl Cpu {
@@ -23,6 +30,7 @@ impl Cpu {
     
     pub fn run(&mut self) {
         for i in 0..130 {
+            debug!("{:?}", self);
             let opcode = self.interconnect.read_word(self.pc);
             self.execute_opcode(opcode);
         }
