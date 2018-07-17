@@ -1,3 +1,3 @@
 #!/bin/bash
 
-RUST_LOG=trace cargo run -- games/tetris.c8
+RUST_LOG=trace cargo run --bin chip8 -- games/tetris.c8
