@@ -4,9 +4,16 @@ use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
+const CHIP8_WIDTH: usize = 64;
+const CHIP8_HEIGHT: usize = 32;
+const SCALE: usize = 12;
+const WINDOW_WIDTH: usize = CHIP8_WIDTH * SCALE;
+const WINDOW_HEIGHT: usize = CHIP8_HEIGHT * SCALE;
+
 // TODO: make it more generic
 pub struct Display {
-    buffer: [[u8; 64]; 32],
+    // TODO: move vram to Interconnect?
+    vram: [[u8; CHIP8_WIDTH]; CHIP8_HEIGHT],
     canvas: Canvas<Window>,
 }
 
@@ -16,7 +23,7 @@ impl Display {
 
         // TODO: do not handle this here!
         let window = match v_ctx
-            .window("chip8 VM", 640, 480)
+            .window("chip8 VM", WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32)
             .position_centered()
             .build() {
             Ok(window) => window,
@@ -36,16 +43,43 @@ impl Display {
         let _ = canvas.present();
 
         Display {
-            buffer: [[0; 64]; 32],
+            vram: [[0; CHIP8_WIDTH]; CHIP8_HEIGHT],
             canvas
         }
     }
 
-    pub fn clear(&mut self) {
-
+    pub fn vram(&mut self) -> &mut [[u8; CHIP8_WIDTH]; CHIP8_HEIGHT] {
+        &mut self.vram
     }
 
-    pub fn draw(&self) {
+    pub fn clear(&mut self) {
+        self.canvas.clear();
+        self.canvas.present();
+    }
 
+    pub fn draw(&mut self) {
+        let black: sdl2::pixels::Color = sdl2::pixels::Color::RGB(0, 0, 0);
+        let white: sdl2::pixels::Color = sdl2::pixels::Color::RGB(255, 255, 255);
+
+        let mut pixel = Rect::new(0, 0, 0, 0);
+
+        for i in 0..CHIP8_WIDTH {
+            for j in 0..CHIP8_HEIGHT {
+                pixel.set_x((i * SCALE) as i32);
+                pixel.set_y((j * SCALE) as i32);
+                pixel.set_width(SCALE as u32);
+                pixel.set_height(SCALE as u32);
+
+                if self.vram[j as usize][i as usize] == 1 {
+                    self.canvas.set_draw_color(white);
+                    self.canvas.fill_rect(pixel);
+                } else {
+                    self.canvas.set_draw_color(black);
+                    self.canvas.fill_rect(pixel);
+                };
+            };
+        };
+
+        self.canvas.present()
     }
 }

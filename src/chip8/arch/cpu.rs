@@ -1,5 +1,7 @@
 use super::super::interconnect;
 use std::fmt;
+use rand;
+use rand::Rng;
 
 pub struct Cpu {
     v: [u8; 16],
@@ -29,10 +31,10 @@ impl Cpu {
     pub fn execute_cycle(&mut self, interconnect: &mut interconnect::Interconnect) {
         trace!("{:?}", self);
         let opcode = interconnect.read_word(self.pc);
-        self.execute_opcode(opcode);
+        self.execute_opcode(opcode, interconnect);
     }
 
-    fn execute_opcode(&mut self, opcode: u16) {
+    fn execute_opcode(&mut self, opcode: u16, interconnect: &mut interconnect::Interconnect) {
 
         let op_1 = (opcode & 0xF000) >> 12;
         let op_2 = (opcode & 0x0F00) >> 8;
@@ -47,24 +49,30 @@ impl Cpu {
         let vy = self.v[y];
 
         match (op_1, op_2, op_3, op_4) {
+            (0x0, 0x0, 0xE, 0x0) => {
+                trace!("[DISPLAY] Clear screen");
+                interconnect.display().clear();
+                self.pc += 2;
+            },
+            (0x0, 0x0, 0xE, 0xE) => {
+                trace!("[FLOW] Return from subroutine");
+                self.sp -= 1;
+                self.pc = self.stack[self.sp as usize];
+                self.pc += 2;
+            },
             (0x0, _, _, _) => {
                 trace!("[CALL] Call RCA 1802 program at {:#x}", nnn);
                 panic!("[CALL] Call RCA 1802 program at {:#x}", nnn);
             }
-            (0x0, 0x0, 0xE, 0x0) => {
-                trace!("[DISPLAY] Clear screen");
-            },
-            (0x0, 0x0, 0xE, 0xE) => {
-                trace!("[FLOW] Return from subroutine");
-                panic!("[FLOW] Return from subroutine");
-            },
             (0x1, _, _, _) => {
                 trace!("[FLOW] Jump to: {:#x}", nnn);
                 self.pc = nnn;
             },
             (0x2, _, _, _) => {
                 trace!("[FLOW] Call subroutine at {:#x}", nnn);
-                panic!("[FLOW] Call subroutine at {:#x}", nnn);
+                self.stack[self.sp as usize] = self.pc;
+                self.sp += 1;
+                self.pc = nnn;
             },
             (0x3, _, _, _) => {
                 trace!("[COND] Skip next instruction if V{:x} equals {:#x}", x, nn);
@@ -97,7 +105,8 @@ impl Cpu {
             },
             (0x7, _, _, _) => {
                 trace!("[CONST] Add {:#x} to V{:x}", nn, x);
-                self.v[x] += nn;
+                let r = vx as u16 + nn as u16;
+                self.v[x] = r as u8;
                 self.pc += 2;
             },
             (0x8, _, _, 0x0) => {
@@ -122,22 +131,33 @@ impl Cpu {
             },
             (0x8, _, _, 0x4) => {
                 trace!("[MATH] Add V{:x} to V{:x}", x, y);
+                let r = vx as u16 + vy as u16;
+                self.v[x] = r as u8;
+                self.v[0xF] = if r > 0xFF { 1 } else { 0 };
                 self.pc += 2;
             },
             (0x8, _, _, 0x5) => {
                 trace!("[MATH] Substract V{:x} from  V{:x}", y, x);
+                self.v[0xF] = if vx > vy { 1 } else { 0 };
+                self.v[x] = self.v[x].wrapping_sub(vy);
                 self.pc += 2;
             },
             (0x8, _, _, 0x6) => {
                 trace!("[BITOP] Shift V{:x} right by 1 and store result to V{:x}", y, x);
+                self.v[0xF] = vy & 1;
+                self.v[x] = vy >> 1;
                 self.pc += 2;
             },
             (0x8, _, _, 0x7) => {
                 trace!("[MATH] Set V{:x} to V{:x} - V{:x}", x, y, x);
+                self.v[0xF] = if vx > vy { 0 } else { 1 };
+                self.v[x] = vy.wrapping_sub(vx);
                 self.pc += 2;
             },
             (0x8, _, _, 0xE) => {
                 trace!("[BITOP] Shift V{:x} left by 1 and copy the result to V{:x}", y, x);
+                self.v[0xF] = vy & 0x80;
+                self.v[x] = vy << 1;
                 self.pc += 2;
             },
             (0x9, _, _, 0x0) => {
@@ -150,6 +170,7 @@ impl Cpu {
             },
             (0xA, _, _, _) => {
                 trace!("[MEM] Set I to the address {:#x}", nnn);
+                self.i = nnn;
                 self.pc += 2;
             },
             (0xB, _, _, _) => {
@@ -158,25 +179,39 @@ impl Cpu {
             },
             (0xC, _, _, _) => {
                 trace!("[RAND] Set V{:x} to the result: rand() AND {:#x}", x, nn);
+                self.v[x] = rand::thread_rng().gen::<u8>() & nn;
                 self.pc += 2;
             },
             (0xD, _, _, _) => {
                 trace!("[DISPLAY] Draw a sprite at coordinate (V{:x}, V{:x}) of size {:#x} pixels", x, y, n);
+
+                self.v[0xF] = 0;
+
+                for j in 0..n {
+                    let pixel = interconnect.ram()[(self.i + j as u16) as usize];
+                    for i in 0..8 {
+                        if (pixel & (0x80 >> i)) != 0 {
+                            if interconnect.display().vram()[(x + i) as usize][y + j as usize] == 1 {
+                                self.v[0xF] = 1;
+                            }
+                            interconnect.display().vram()[(x + i) as usize][y + j as usize] ^= 1;
+                        }
+                    }
+                }
+
+                interconnect.display().draw();
                 self.pc += 2;
             },
             (0xE, _, 0x9, 0xE) => {
-                trace!("[KEYOP] Skip next instruction if key stored in V{:x} is present", x);
-                panic!("[KEYOP] Skip next instruction if key stored in V{:x} is present", x);
+                trace!("[KEYOP]); Skip next instruction if key; stored in V{:x} is present", x);
                 self.pc += 2;
             },
             (0xE, _, 0xA, 0x1) => {
                 trace!("[KEYOP] Skip next instruction if key stored in V{:x} isn't present", x);
-                panic!("[KEYOP] Skip next instruction if key stored in V{:x} isn't present", x);
                 self.pc += 2;
             },
             (0xF, _, 0x0, 0x7) => {
                 trace!("[TIMER] Set V{:x} to the value of the delay timer", x);
-                panic!("[TIMER] Set V{:x} to the value of the delay timer", x);
                 self.pc += 2;
             },
             (0xF, _, 0x0, 0xA) => {
@@ -186,7 +221,6 @@ impl Cpu {
             },
             (0xF, _, 0x1, 0x5) => {
                 trace!("[TIMER] Set the delay timer to V{:x}", x);
-                panic!("[TIMER] Set the delay timer to V{:x}", x);
                 self.pc += 2;
             },
             (0xF, _, 0x1, 0x8) => {
@@ -196,22 +230,29 @@ impl Cpu {
             },
             (0xF, _, 0x1, 0xE) => {
                 trace!("[MEM] Add V{:x} to I", x);
+                self.i += vx as u16;
                 self.pc += 2;
             },
             (0xF, _, 0x2, 0x9) => {
                 trace!("[MEM] Set I to the location of the sprite for the character in V{:x}", x);
+                panic!("[MEM] Set I to the location of the sprite for the character in V{:x}", x);
                 self.pc += 2;
             },
             (0xF, _, 0x3, 0x3) => {
                 trace!("[BCD] Store BCD representation of V{:x} in memory starting at address I", x);
+                panic!("[BCD] Store BCD representation of V{:x} in memory starting at address I", x);
                 self.pc += 2;
             },
             (0xf, _, 0x5, 0x5) => {
                 trace!("[MEM] Store V0 to V{:x} in memory starting at address I", x);
+                interconnect.write_memory(self.i, &(self.v[0..x].to_vec()));
                 self.pc += 2;
             },
             (0xF, _, 0x6, 0x5) => {
                 trace!("[MEM] Fill V0 to V{:x} with values from memory starting at address I", x);
+                for i in 0..x {
+                    self.v[i] = interconnect.read_byte(self.i + i as u16);
+                }
                 self.pc += 2;
             }
             _ => {

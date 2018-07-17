@@ -1,6 +1,8 @@
 #[macro_use] extern crate log;
 extern crate env_logger;
 extern crate sdl2;
+extern crate rand;
+
 use sdl2::rect::{Rect};
 use sdl2::event::{Event};
 use sdl2::keyboard::Keycode;
@@ -13,13 +15,11 @@ use std::io::prelude::*;
 mod chip8;
 
 fn main() {
-    let rom_path = env::args().nth(1)
-        .expect("Provide rom location!");
+    let rom_path = env::args().nth(1).expect("Provide rom location!");
 
     env_logger::init();
 
-    let code = fs::read(&rom_path)
-        .expect("Could not read file");
+    let code = fs::read(&rom_path).expect("Could not read file");
 
     info!("Starting Chip8 emulation for ROM at: {:#}", rom_path);
 
@@ -47,5 +47,4 @@ fn main() {
     loop {
         main_loop();
     }
-
 }
