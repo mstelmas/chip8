@@ -203,6 +203,7 @@ impl Cpu {
                     let pixel = interconnect.ram()[(self.i + j as u16) as usize];
                     for i in 0..8 {
                         if (pixel & (0x80 >> i)) != 0 {
+                            // FIXME: index out of bounds: the len is 64 but the index is 255 (UFO)
                             if interconnect.display().vram()[(vy + j) as usize][(vx + i) as usize] == 1 {
                                 self.v[0xF] = 1;
                             }
@@ -259,12 +260,13 @@ impl Cpu {
             },
             (0xF, _, 0x2, 0x9) => {
                 trace!("[MEM] Set I to the location of the sprite for the character in V{:x}", x);
-                panic!("[MEM] Set I to the location of the sprite for the character in V{:x}", x);
+                self.i = (vx * 5) as u16;
                 self.pc += 2;
             },
             (0xF, _, 0x3, 0x3) => {
                 trace!("[BCD] Store BCD representation of V{:x} in memory starting at address I", x);
-                panic!("[BCD] Store BCD representation of V{:x} in memory starting at address I", x);
+                let bcd_repr = [vx / 100, (vx % 100) / 10, vx % 10];
+                interconnect.write_memory(self.i, &bcd_repr.to_vec());
                 self.pc += 2;
             },
             (0xf, _, 0x5, 0x5) => {
