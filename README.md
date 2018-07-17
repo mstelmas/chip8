@@ -1,9 +1,10 @@
 # chip8 VM
 
-Made for educational purposes: 
-0. learning basics of systems emulation
-0. getting more experience with Rust and its ecosystem
-0. as a warm up before emulating more complicated systems
+Made for educational purposes:
+
+0. Learning basics of systems emulation
+0. Getting more experience with Rust and its ecosystem
+0. As a warm up before emulating more complicated systems
 
 ## Features ideas:
 0. JIT recompiler
