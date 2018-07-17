@@ -4,6 +4,7 @@ use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
+// TODO: extract to config
 const CHIP8_WIDTH: usize = 64;
 const CHIP8_HEIGHT: usize = 32;
 const SCALE: usize = 12;
@@ -58,6 +59,7 @@ impl Display {
     }
 
     pub fn draw(&mut self) {
+        // TODO: enable custom color configuration
         let black: sdl2::pixels::Color = sdl2::pixels::Color::RGB(0, 0, 0);
         let white: sdl2::pixels::Color = sdl2::pixels::Color::RGB(255, 255, 255);
 

@@ -26,25 +26,8 @@ fn main() {
     let sdl_context = sdl2::init().unwrap();
 
     let display = chip8::display::Display::new(&sdl_context);
-    let mut chip8 = chip8::Chip8::new(display);
+    let keypad = chip8::keypad::Keypad::new(&sdl_context);
+    let mut chip8 = chip8::Chip8::new(display, keypad);
     chip8.load_rom(&code);
-
-    let mut events = sdl_context.event_pump().unwrap();
-
-    let mut main_loop = || {
-        for event in events.poll_iter() {
-            match event {
-                Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    process::exit(1);
-                },
-                _ => {}
-            }
-        }
-
-        chip8.step();
-    };
-
-    loop {
-        main_loop();
-    }
+    chip8.run();
 }

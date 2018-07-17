@@ -1,7 +1,7 @@
-use super::{Cpu, Interconnect, Display};
+use super::{Cpu, Interconnect, Display, Keypad};
+use super::mem_map;
 
-const ROM_LOCATION: u16 = 0x200;
-const FONTS_LOCATION: u16 = 0x0;
+use std::process;
 
 pub struct Chip8 {
     cpu: Cpu,
@@ -9,8 +9,8 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    pub fn new(display: Display) -> Self {
-        let mut interconnect = Interconnect::new(display);
+    pub fn new(display: Display, keypad: Keypad) -> Self {
+        let mut interconnect = Interconnect::new(display, keypad);
         Chip8::load_fonts(&mut interconnect);
 
         Chip8 {
@@ -40,14 +40,26 @@ impl Chip8 {
             0xF0, 0x80, 0xF0, 0x80, 0x80, /* F */
         ];
 
-        interconnect.write_memory(FONTS_LOCATION, &font_set);
+        interconnect.write_memory(mem_map::FONTS_LOCATION, &font_set);
     }
 
     pub fn load_rom(&mut self, rom: &Vec<u8>) {
-        self.interconnect.write_memory(ROM_LOCATION, rom);
+        self.interconnect.write_memory(mem_map::ROM_LOCATION, rom);
     }
 
-    pub fn step(&mut self) {
-        self.cpu.execute_cycle(&mut self.interconnect);
+    pub fn run(&mut self) {
+        loop {
+            self.step();
+        }
+    }
+
+    fn step(&mut self) {
+        match self.interconnect.keypad().poll() {
+            Err(_) => process::exit(0),
+            Ok(keypad_state) => {
+                self.interconnect.keypad().update_state(keypad_state);
+                self.cpu.execute_cycle(&mut self.interconnect);
+            }
+        }
     }
 }

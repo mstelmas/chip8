@@ -1,17 +1,19 @@
 use super::display;
-
-const RAM_SIZE: usize = 4096;
+use super::keypad;
+use super::mem_map;
 
 pub struct Interconnect {
-    ram: [u8; RAM_SIZE],
-    display: display::Display
+    ram: [u8; mem_map::RAM_SIZE],
+    display: display::Display,
+    keypad: keypad::Keypad
 }
 
 impl Interconnect {
-    pub fn new(display: display::Display) -> Interconnect {
+    pub fn new(display: display::Display, keypad: keypad::Keypad) -> Interconnect {
         Interconnect {
-            ram: [0; RAM_SIZE],
-            display
+            ram: [0; mem_map::RAM_SIZE],
+            display,
+            keypad
         }
     }
 
@@ -19,8 +21,12 @@ impl Interconnect {
         &mut self.display
     }
 
-    pub fn ram(&mut self) -> &mut [u8; RAM_SIZE] {
+    pub fn ram(&mut self) -> &mut [u8; mem_map::RAM_SIZE] {
         &mut self.ram
+    }
+
+    pub fn keypad(&mut self) -> &mut keypad::Keypad {
+        &mut self.keypad
     }
 
     pub fn read_word(&self, location: u16) -> u16 {
@@ -33,7 +39,6 @@ impl Interconnect {
 
     // TODO: bounds checking
     pub fn write_memory(&mut self, location: u16, data: &Vec<u8>) {
-        error!("{}", data.len());
         for i in 0..data.len() {
             self.ram[location as usize + i] = data[i];
         }

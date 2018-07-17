@@ -9,11 +9,15 @@ pub struct Cpu {
     pc: u16,
     stack: [u16; 16],
     sp: u8,
+
+    // TODO: extract ?
+    delay_timer: u8,
+    await_key_press: bool
 }
 
 impl fmt::Debug for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PC: 0x{:x}, SP: 0x{:x}, V: {:?}", self.pc, self.sp, self.v)
+        write!(f, "PC: 0x{:x}, SP: 0x{:x}, DT: {:x}, V: {:?}", self.pc, self.sp, self.delay_timer, self.v)
     }
 }
 
@@ -24,12 +28,20 @@ impl Cpu {
             i: 0,
             pc: 0x200,
             stack: [0; 16],
-            sp: 0
+            sp: 0,
+
+            delay_timer: 0,
+            await_key_press: false
         }
     }
     
     pub fn execute_cycle(&mut self, interconnect: &mut interconnect::Interconnect) {
         trace!("{:?}", self);
+
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
         let opcode = interconnect.read_word(self.pc);
         self.execute_opcode(opcode, interconnect);
     }
@@ -183,7 +195,7 @@ impl Cpu {
                 self.pc += 2;
             },
             (0xD, _, _, _) => {
-                trace!("[DISPLAY] Draw a sprite at coordinate (V{:x}, V{:x}) of size {:#x} pixels", x, y, n);
+                trace!("[DISPLAY] Draw a sprite at coordinate (V{:x} (={:x}), V{:x} (={:x})) of size {:#x} pixels", x, vx, y, vy, n);
 
                 self.v[0xF] = 0;
 
@@ -191,10 +203,10 @@ impl Cpu {
                     let pixel = interconnect.ram()[(self.i + j as u16) as usize];
                     for i in 0..8 {
                         if (pixel & (0x80 >> i)) != 0 {
-                            if interconnect.display().vram()[(x + i) as usize][y + j as usize] == 1 {
+                            if interconnect.display().vram()[(vy + j) as usize][(vx + i) as usize] == 1 {
                                 self.v[0xF] = 1;
                             }
-                            interconnect.display().vram()[(x + i) as usize][y + j as usize] ^= 1;
+                            interconnect.display().vram()[(vy + j) as usize][(vx + i) as usize] ^= 1;
                         }
                     }
                 }
@@ -204,28 +216,40 @@ impl Cpu {
             },
             (0xE, _, 0x9, 0xE) => {
                 trace!("[KEYOP]); Skip next instruction if key; stored in V{:x} is present", x);
-                self.pc += 2;
+                if interconnect.keypad().is_key_pressed(x) == true {
+                    self.pc += 4;
+                } else {
+                    self.pc += 2;
+                }
             },
             (0xE, _, 0xA, 0x1) => {
                 trace!("[KEYOP] Skip next instruction if key stored in V{:x} isn't present", x);
-                self.pc += 2;
+                if interconnect.keypad().is_key_pressed(x) == false {
+                    self.pc += 4;
+                } else {
+                    self.pc += 2;
+                }
             },
             (0xF, _, 0x0, 0x7) => {
                 trace!("[TIMER] Set V{:x} to the value of the delay timer", x);
+                self.v[x] = self.delay_timer;
                 self.pc += 2;
             },
             (0xF, _, 0x0, 0xA) => {
                 trace!("[KEYOP] Await (blocking) key press and store result in V{:x}", x);
                 panic!("[KEYOP] Await (blocking) key press and store result in V{:x}", x);
+                self.await_key_press = true;
+                // TODO: FINISH IMPLEMENTATION
                 self.pc += 2;
             },
             (0xF, _, 0x1, 0x5) => {
                 trace!("[TIMER] Set the delay timer to V{:x}", x);
+                self.delay_timer = vx;
                 self.pc += 2;
             },
             (0xF, _, 0x1, 0x8) => {
                 trace!("[SOUND] Set the sound timer to V{:x}", x);
-                panic!("[SOUND] Set the sound timer to V{:x}", x);
+                warn!("UNIMPLEMENTED - [SOUND] Set the sound timer to V{:x}", x);
                 self.pc += 2;
             },
             (0xF, _, 0x1, 0xE) => {
