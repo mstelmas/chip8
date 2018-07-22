@@ -3,11 +3,6 @@ extern crate env_logger;
 extern crate sdl2;
 extern crate rand;
 
-use sdl2::rect::{Rect};
-use sdl2::event::{Event};
-use sdl2::keyboard::Keycode;
-
-use std::process;
 use std::env;
 use std::fs;
 use std::io::prelude::*;

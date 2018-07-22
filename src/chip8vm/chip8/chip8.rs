@@ -1,11 +1,26 @@
-use super::{Cpu, Interconnect, Display, Keypad};
+use super::{Cpu, Interconnect, Display, Keypad, RemoteDbg, DbgMessage};
 use super::mem_map;
 
 use std::process;
+use std::thread;
+use std::net::{TcpListener, TcpStream, Shutdown};
+use std::io::prelude::*;
+use std::io::{BufReader, BufWriter};
+
+use std::sync::mpsc;
+
+#[derive(PartialEq)]
+enum VmState {
+    CREATED,
+    RUNNING,
+    STOPPED
+}
 
 pub struct Chip8 {
     cpu: Cpu,
-    interconnect: Interconnect
+    interconnect: Interconnect,
+
+    vm_state: VmState
 }
 
 impl Chip8 {
@@ -15,7 +30,8 @@ impl Chip8 {
 
         Chip8 {
             cpu: Cpu::new(),
-            interconnect
+            interconnect,
+            vm_state: VmState::CREATED
         }
     }
 
@@ -48,8 +64,22 @@ impl Chip8 {
     }
 
     pub fn run(&mut self) {
+        assert!(self.vm_state == VmState::CREATED);
+
+        let (sender, receiver) = mpsc::channel();
+        RemoteDbg::init(sender);
+
+        self.vm_state = VmState::RUNNING;
+
         loop {
-            self.step();
+            match receiver.try_recv() {
+                Ok(message) => self.handle_dbg_message(message),
+                Err(_) => {}
+            }
+
+            if self.vm_state == VmState::RUNNING {
+                self.step();
+            }
         }
     }
 
@@ -60,6 +90,15 @@ impl Chip8 {
                 self.interconnect.keypad().update_state(keypad_state);
                 self.cpu.execute_cycle(&mut self.interconnect);
             }
+        }
+    }
+
+    fn handle_dbg_message(&mut self, message: DbgMessage) {
+        debug!("Handling message: {:?}", message);
+
+        match message {
+            DbgMessage::START => self.vm_state = VmState::RUNNING,
+            DbgMessage::STOP => self.vm_state = VmState::STOPPED
         }
     }
 }
