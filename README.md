@@ -15,3 +15,6 @@ Made for educational purposes:
 
 ## Trace run (provide your own ROM image!)
 ```scripts/trace.sh```
+
+## Debugger/Disassember run
+```cargo run --bin debugger```
