@@ -83,16 +83,16 @@ impl Opcode {
 pub struct Disasm {}
 
 impl Disasm {
-    pub fn disasm(code: &Vec<u8>) -> Vec<Opcode> {
+    pub fn disasm(code: &Vec<u8>) -> Vec<(Opcode, u16)> {
         let mut opcodes = vec![];
 
         let mut i: usize = 0;
 
-        while i < code.len() {
+        while i < code.len() - 1 {
             let opcode = Self::read_word(code, i);
-            opcodes.push(Self::opcode(opcode));
+            opcodes.push((Self::opcode(opcode), opcode));
             i += 2;
-        }
+        };
 
         opcodes
     }

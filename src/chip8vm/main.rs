@@ -1,7 +1,11 @@
 #[macro_use] extern crate log;
+#[macro_use] extern crate bincode;
+#[macro_use] extern crate serde_derive;
 extern crate env_logger;
 extern crate sdl2;
 extern crate rand;
+extern crate serde;
+extern crate serde_json;
 
 use std::env;
 use std::fs;

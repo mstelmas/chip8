@@ -1,4 +1,5 @@
 use super::super::interconnect;
+use super::super::remote_dbg;
 use std::fmt;
 use rand;
 use rand::Rng;
@@ -32,6 +33,17 @@ impl Cpu {
 
             delay_timer: 0,
             await_key_press: false
+        }
+    }
+
+    // TODO: weird...
+    pub fn snapshot(&self) -> remote_dbg::CpuSnapshot {
+        remote_dbg::CpuSnapshot {
+            v: self.v,
+            i: self.i,
+            pc: self.pc,
+            sp: self.sp,
+            stack: self.stack
         }
     }
     

@@ -1,4 +1,5 @@
 use super::{Cpu, Interconnect, Display, Keypad, RemoteDbg, DbgMessage};
+use super::remote_dbg::{Chip8Snapshots};
 use super::mem_map;
 
 use std::process;
@@ -6,7 +7,6 @@ use std::thread;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
-
 use std::sync::mpsc;
 
 #[derive(PartialEq)]
@@ -20,7 +20,7 @@ pub struct Chip8 {
     cpu: Cpu,
     interconnect: Interconnect,
 
-    vm_state: VmState
+    state: VmState
 }
 
 impl Chip8 {
@@ -31,7 +31,7 @@ impl Chip8 {
         Chip8 {
             cpu: Cpu::new(),
             interconnect,
-            vm_state: VmState::CREATED
+            state: VmState::CREATED
         }
     }
 
@@ -64,20 +64,22 @@ impl Chip8 {
     }
 
     pub fn run(&mut self) {
-        assert!(self.vm_state == VmState::CREATED);
+        assert!(self.state == VmState::CREATED);
 
         let (sender, receiver) = mpsc::channel();
-        RemoteDbg::init(sender);
+        let (sender2, receiver2) = mpsc::channel();
 
-        self.vm_state = VmState::RUNNING;
+        RemoteDbg::init(sender, receiver2);
+
+        self.state = VmState::RUNNING;
 
         loop {
             match receiver.try_recv() {
-                Ok(message) => self.handle_dbg_message(message),
+                Ok(message) => self.handle_dbg_message(message, &sender2),
                 Err(_) => {}
             }
 
-            if self.vm_state == VmState::RUNNING {
+            if self.state == VmState::RUNNING {
                 self.step();
             }
         }
@@ -93,12 +95,28 @@ impl Chip8 {
         }
     }
 
-    fn handle_dbg_message(&mut self, message: DbgMessage) {
-        debug!("Handling message: {:?}", message);
+    // TODO: Extract debugging stuff
+    fn handle_dbg_message(&mut self, message: DbgMessage, sender: &mpsc::Sender<Chip8Snapshots>) {
+        debug!("Handling debugger message: {:?}", message);
 
         match message {
-            DbgMessage::START => self.vm_state = VmState::RUNNING,
-            DbgMessage::STOP => self.vm_state = VmState::STOPPED
+            DbgMessage::START => self.state = VmState::RUNNING,
+            DbgMessage::STOP => self.state = VmState::STOPPED,
+            DbgMessage::RESTART => self.cpu = Cpu::new(),
+            DbgMessage::CPU => sender.send(Chip8Snapshots::CPU(self.cpu.snapshot())).unwrap(),
+            DbgMessage::MEM(addr, size) => {
+                let mut v = vec![];
+
+                for i in 0..size {
+                    v.push(self.interconnect.read_byte(addr + i as u16));
+                }
+
+                sender.send(Chip8Snapshots::MEM(v));
+            },
+            DbgMessage::STEP => {
+                assert!(self.state == VmState::STOPPED);
+                self.step();
+            }
         }
     }
 }
