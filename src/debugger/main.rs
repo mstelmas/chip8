@@ -11,5 +11,9 @@ mod commands;
 mod gui;
 
 fn main() {
-    gui::run();
+    let mut cli = cli::Cli::new();
+
+    // TODO: for now, lets make debugger stop VM that it is attaching to
+    cli.stop();
+    gui::run(cli);
 }

@@ -18,7 +18,7 @@ struct Chip8State {
 }
 
 // TODO: Refactor when GUI becomes more "stable"
-pub fn run() {
+pub fn run(mut cli: Cli) {
     const WIDTH: u32 = 800;
     const HEIGHT: u32 = 600;
 
@@ -43,10 +43,10 @@ pub fn run() {
     let image_map = conrod::image::Map::<glium::texture::Texture2d>::new();
 
     let mut command_text = "".to_owned();
-    let mut cli = Cli::new();
     let mut chip8_state = Chip8State::default();
 
     let mut events = Vec::new();
+    synchronize_vm_state(&mut cli, &mut chip8_state);
 
     'render: loop {
         events.clear();
@@ -73,6 +73,16 @@ pub fn run() {
                             },
                             ..
                         } => break 'render,
+                        glium::glutin::WindowEvent::KeyboardInput {
+                            input: glium::glutin::KeyboardInput {
+                                virtual_keycode: Some(glium::glutin::VirtualKeyCode::F8),
+                                ..
+                            },
+                            ..
+                        } => {
+                            cli.step();
+                            synchronize_vm_state(&mut cli, &mut chip8_state);
+                        },
                         _ => (),
                     }
                 }
@@ -97,6 +107,15 @@ pub fn run() {
             target.finish().unwrap();
         }
     }
+}
+
+fn synchronize_vm_state(cli: &mut Cli, chip8_state: &mut Chip8State) {
+    let cpu_state = cli.cpu();
+    let code_at_pc = cli.mem(cpu_state.pc, 64);
+
+    update_cpu_state_view(&cpu_state, chip8_state);
+    update_stack_state_view(&cpu_state, chip8_state);
+    update_disasm_view(cpu_state.pc, code_at_pc, chip8_state);
 }
 
 fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut String, chip8_state: &mut Chip8State, cli: &mut Cli) {
@@ -174,62 +193,28 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
             widget::text_box::Event::Enter => {
                 match Commands::from_str(command_text) {
                     Ok(Commands::Cpu) => {
-                        let cpu_state = cli.cpu();
-                        chip8_state.cpu_status_textbox.clear();
-                        chip8_state.cpu_status_textbox.push_str(&(format!("PC: 0x{:x}  SP: 0x{:x}  I: 0x{:x}\n\n\
-                                                              V0: 0x{:x}  V6: 0x{:x}  V12: 0x{:x}\n\
-                                                              V1: 0x{:x}  V7: 0x{:x}  V13: 0x{:x}\n\
-                                                              V2: 0x{:x}  V8: 0x{:x}  V14: 0x{:x}\n\
-                                                              V3: 0x{:x}  V9: 0x{:x}  V15: 0x{:x}\n\
-                                                              V4: 0x{:x}  V10: 0x{:x}  \n\
-                                                              V5: 0x{:x}  V11: 0x{:x}  \
-                                                              ", cpu_state.pc, cpu_state.sp, cpu_state.i,
-                                                              cpu_state.v[0], cpu_state.v[6], cpu_state.v[12],
-                                                              cpu_state.v[1], cpu_state.v[7], cpu_state.v[13],
-                                                              cpu_state.v[2], cpu_state.v[8], cpu_state.v[14],
-                                                              cpu_state.v[3], cpu_state.v[9], cpu_state.v[15],
-                                                              cpu_state.v[4], cpu_state.v[10],
-                                                              cpu_state.v[5], cpu_state.v[11]).to_owned())[..]);
-
-                        chip8_state.stack_textbox.clear();
-
-                        let v: Vec<String> = cpu_state.stack.iter().enumerate()
-                            .map(|(i, s)| format!("{}{:02X}", if i as u8 == cpu_state.sp { "->" } else { "  " }, s)).collect()
-                        ;
-
-                        chip8_state.stack_textbox.push_str(&v.join("\n"));
-
-                    }
+                        // We'll ignore this command for now, as debugger should always be synchronized
+                        // with VM's state therefore there should be no need for manual CPU state
+                        // retrieval
+                    },
                     Ok(Commands::Disasm(addr)) => {
-                        let m = cli.mem(addr, 100);
-
-                        let a: Vec<(Opcode, u16)> = Disasm::disasm(&m);
-
-                        let b: Vec<String> = a.iter().enumerate().map(|(i, op)| format!("0x{:03x} {:02X?} {:02X?}  {}", addr as usize + i * 2,
-                                                                                        (op.1 >> 8) as u8, (op.1 & 0xFF) as u8, op.0.repr())).collect();
-                        &chip8_state.disasm_textbox.clear();
-                        &chip8_state.disasm_textbox.push_str(&b.join("\n"));
+                        update_disasm_view(addr, cli.mem(addr, 100), chip8_state);
                     },
                     Ok(Commands::Mem(addr)) => {
-                        let m = cli.mem(addr, 100);
-                        let width = 12;
-                        let mut f = String::new();
-
-                        for i in 0..(m.len() / width) {
-                            f.push_str(&format!("0x{:03x}  ", addr as usize + (i * width)));
-                            for i in &m[width * i..(width * i) + width] {
-                                f.push_str(&format!("{:02X?} ", i));
-                            }
-                            f.push_str("\n");
-                        }
-
-                        &chip8_state.mem_dump_textbox.clear();
-                        &chip8_state.mem_dump_textbox.push_str(&f);
-
+                        update_mem_dump_view(addr, cli.mem(addr, 100), chip8_state);
                     },
-                    Ok(Commands::Start) => cli.start(),
-                    Ok(Commands::Step) => cli.step(),
-                    Ok(Commands::Stop) => cli.stop(),
+                    Ok(Commands::Start) => {
+                        cli.start()
+                    },
+                    Ok(Commands::Step) => {
+                        cli.step();
+                        synchronize_vm_state(cli, chip8_state);
+                        synchronize_vm_state(cli, chip8_state);
+
+                    }
+                    Ok(Commands::Stop) => {
+                        cli.stop()
+                    },
                     Err(ref e) => println!("{}", e)
                 }
             },
@@ -238,6 +223,59 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
             }
         }
     }
+}
+
+fn update_cpu_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State) {
+    chip8_state.cpu_status_textbox.clear();
+    chip8_state.cpu_status_textbox.push_str(&(format!("PC: 0x{:x}  SP: 0x{:x}  I: 0x{:x}\n\n\
+                                                              V0: 0x{:x}  V6: 0x{:x}  V12: 0x{:x}\n\
+                                                              V1: 0x{:x}  V7: 0x{:x}  V13: 0x{:x}\n\
+                                                              V2: 0x{:x}  V8: 0x{:x}  V14: 0x{:x}\n\
+                                                              V3: 0x{:x}  V9: 0x{:x}  V15: 0x{:x}\n\
+                                                              V4: 0x{:x}  V10: 0x{:x}  \n\
+                                                              V5: 0x{:x}  V11: 0x{:x}  \
+                                                              ", cpu_state.pc, cpu_state.sp, cpu_state.i,
+                                                      cpu_state.v[0], cpu_state.v[6], cpu_state.v[12],
+                                                      cpu_state.v[1], cpu_state.v[7], cpu_state.v[13],
+                                                      cpu_state.v[2], cpu_state.v[8], cpu_state.v[14],
+                                                      cpu_state.v[3], cpu_state.v[9], cpu_state.v[15],
+                                                      cpu_state.v[4], cpu_state.v[10],
+                                                      cpu_state.v[5], cpu_state.v[11]).to_owned())[..]);
+}
+
+fn update_stack_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State) {
+    chip8_state.stack_textbox.clear();
+
+    let v: Vec<String> = cpu_state.stack.iter().enumerate()
+        .map(|(i, s)| format!("{}{:02X}", if i as u8 == cpu_state.sp { "->" } else { "  " }, s)).collect()
+    ;
+
+    chip8_state.stack_textbox.push_str(&v.join("\n"));
+}
+
+fn update_disasm_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut Chip8State) {
+    let a: Vec<(Opcode, u16)> = Disasm::disasm(&bytes);
+
+    let b: Vec<String> = a.iter().enumerate().map(|(i, op)| format!("0x{:03x} {:02X?} {:02X?}  {}", addr as usize + i * 2,
+                                                                    (op.1 >> 8) as u8, (op.1 & 0xFF) as u8, op.0.repr())).collect();
+    chip8_state.disasm_textbox.clear();
+    chip8_state.disasm_textbox.push_str(&b.join("\n"));
+}
+
+fn update_mem_dump_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut Chip8State) {
+    let width = 12;
+    let mut f = String::new();
+
+    for i in 0..(bytes.len() / width) {
+        f.push_str(&format!("0x{:03x}  ", addr as usize + (i * width)));
+        for i in &bytes[width * i..(width * i) + width] {
+            f.push_str(&format!("{:02X?} ", i));
+        }
+        f.push_str("\n");
+    }
+
+    chip8_state.mem_dump_textbox.clear();
+    chip8_state.mem_dump_textbox.push_str(&f);
 }
 
 widget_ids! {
