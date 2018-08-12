@@ -8,32 +8,53 @@ use disasm::Opcode;
 use commands::Commands;
 use std::borrow::Cow;
 use std::str::FromStr;
+use conrod::event;
 
-#[derive(Default)]
-struct Chip8State {
+const HORIZONTAL_SPLIT_RATIO: f32 = 0.5;
+const MEM_VIEW_WIDTH_FONT_RATIO: f32 = 0.0175;
+const MEM_VIEW_HEIGHT_FONT_RATIO: f32 = 0.04;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
+
+struct UIState {
     cpu_status_textbox: String,
     stack_textbox: String,
     disasm_textbox: String,
     mem_dump_textbox: String,
+
+    window_height: u32,
+    window_width: u32,
+}
+
+impl Default for UIState {
+    fn default() -> Self {
+        UIState {
+            cpu_status_textbox: String::new(),
+            stack_textbox: String::new(),
+            disasm_textbox: String::new(),
+            mem_dump_textbox: String::new(),
+
+            window_height: HEIGHT,
+            window_width: WIDTH,
+        }
+    }
 }
 
 // TODO: Refactor when GUI becomes more "stable"
 pub fn run(mut cli: Cli) {
-    const WIDTH: u32 = 800;
-    const HEIGHT: u32 = 600;
-
     let mut events_loop = glium::glutin::EventsLoop::new();
     let window = glium::glutin::WindowBuilder::new()
         .with_title("Chip8VM Debugger!")
-        .with_dimensions((WIDTH, HEIGHT).into());
+        .with_dimensions((WIDTH, HEIGHT).into())
+        .with_resizable(false);
     let context = glium::glutin::ContextBuilder::new()
         .with_vsync(true)
         .with_multisampling(4);
     let display = glium::Display::new(window, context, &events_loop).unwrap();
 
-    let mut ui = conrod::UiBuilder::new([WIDTH as f64, HEIGHT as f64]).build();
+    let mut ui = conrod::UiBuilder::new([WIDTH as f64, HEIGHT as f64])..build();
 
-    const FONT_PATH: &'static str = "src/debugger/assets/fonts/NotoSans-Regular.ttf";
+    const FONT_PATH: &'static str = "src/debugger/assets/fonts/Consolas-Bold.ttf";
     ui.fonts.insert_from_file(FONT_PATH).unwrap();
 
     let mut renderer = conrod::backend::glium::Renderer::new(&display).unwrap();
@@ -43,10 +64,10 @@ pub fn run(mut cli: Cli) {
     let image_map = conrod::image::Map::<glium::texture::Texture2d>::new();
 
     let mut command_text = "".to_owned();
-    let mut chip8_state = Chip8State::default();
+    let mut ui_state = UIState::default();
 
     let mut events = Vec::new();
-    synchronize_vm_state(&mut cli, &mut chip8_state);
+    synchronize_vm_state(&mut cli, &mut ui_state);
 
     'render: loop {
         events.clear();
@@ -61,7 +82,6 @@ pub fn run(mut cli: Cli) {
         }
 
         for event in events.drain(..) {
-
             match event.clone() {
                 glium::glutin::Event::WindowEvent { event, .. } => {
                     match event {
@@ -81,11 +101,11 @@ pub fn run(mut cli: Cli) {
                             ..
                         } => {
                             cli.step();
-                            synchronize_vm_state(&mut cli, &mut chip8_state);
+                            synchronize_vm_state(&mut cli, &mut ui_state);
                         },
                         _ => (),
                     }
-                }
+                },
                 _ => (),
             };
 
@@ -96,7 +116,7 @@ pub fn run(mut cli: Cli) {
 
             ui.handle_event(input);
 
-            set_widgets(ui.set_widgets(), ids, &mut command_text, &mut chip8_state, &mut cli);
+            set_widgets(ui.set_widgets(), ids, &mut command_text, &mut ui_state, &mut cli);
         }
 
         if let Some(primitives) = ui.draw_if_changed() {
@@ -109,21 +129,26 @@ pub fn run(mut cli: Cli) {
     }
 }
 
-fn synchronize_vm_state(cli: &mut Cli, chip8_state: &mut Chip8State) {
+fn synchronize_vm_state(cli: &mut Cli, chip8_state: &mut UIState) {
     let cpu_state = cli.cpu();
     let code_at_pc = cli.mem(cpu_state.pc, 64);
 
     update_cpu_state_view(&cpu_state, chip8_state);
     update_stack_state_view(&cpu_state, chip8_state);
     update_disasm_view(cpu_state.pc, code_at_pc, chip8_state);
+
+    // TEMP
+    update_mem_dump_view(cpu_state.pc, cli.mem(cpu_state.pc, 100), chip8_state)
 }
 
-fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut String, chip8_state: &mut Chip8State, cli: &mut Cli) {
+fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut String, chip8_state: &mut UIState, cli: &mut Cli) {
     use conrod::{color, widget, Colorable, Labelable, Positionable, Sizeable, Widget};
 
     let mut s = widget::canvas::Style::default();
     s.border_color = Some(color::GREEN);
     s.border = Some(3.0);
+
+    let memory_dump_canvas = (ids.mem_canvas, widget::Canvas::new().with_style(s).color(color::BLACK));
 
     widget::Canvas::new().flow_down(&[
         (ids.body, widget::Canvas::new().length_weight(0.94).flow_right(&[
@@ -133,7 +158,7 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
                     (ids.cpu_canvas, widget::Canvas::new().with_style(s).color(color::BLACK)),
                     (ids.stack_canvas, widget::Canvas::new().with_style(s).color(color::BLACK))
                 ])),
-                (ids.mem_canvas, widget::Canvas::new().with_style(s).color(color::BLACK)),
+                (memory_dump_canvas),
             ])),
         ])),
         (ids.commands_canvas, widget::Canvas::new().color(color::BLUE).length_weight(0.06).scroll_kids_vertically()),
@@ -170,11 +195,11 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
     widget::Text::new(&chip8_state.mem_dump_textbox)
         .color(color::WHITE)
         .padded_w_of(ids.mem_canvas, 10.0)
+        .padded_h_of(ids.mem_canvas, 8.0)
         .mid_top_with_margin_on(ids.mem_canvas, 10.0)
-        .left_justify()
+        .center_justify()
         .line_spacing(10.0)
-        .font_size(16)
-        .scroll_kids()
+        .font_size(12)
         .set(ids.mem_dump_textbox, ui);
 
     for event in widget::TextBox::new(command_text)
@@ -209,7 +234,6 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
                     Ok(Commands::Step) => {
                         cli.step();
                         synchronize_vm_state(cli, chip8_state);
-                        synchronize_vm_state(cli, chip8_state);
 
                     }
                     Ok(Commands::Stop) => {
@@ -225,7 +249,7 @@ fn set_widgets(ref mut ui: conrod::UiCell, ids: &mut Ids, command_text: &mut Str
     }
 }
 
-fn update_cpu_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State) {
+fn update_cpu_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut UIState) {
     chip8_state.cpu_status_textbox.clear();
     chip8_state.cpu_status_textbox.push_str(&(format!("PC: 0x{:x}  SP: 0x{:x}  I: 0x{:x}\n\n\
                                                               V0: 0x{:x}  V6: 0x{:x}  V12: 0x{:x}\n\
@@ -243,7 +267,7 @@ fn update_cpu_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State) 
                                                       cpu_state.v[5], cpu_state.v[11]).to_owned())[..]);
 }
 
-fn update_stack_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State) {
+fn update_stack_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut UIState) {
     chip8_state.stack_textbox.clear();
 
     let v: Vec<String> = cpu_state.stack.iter().enumerate()
@@ -253,7 +277,7 @@ fn update_stack_state_view(cpu_state: &CpuSnapshot, chip8_state: &mut Chip8State
     chip8_state.stack_textbox.push_str(&v.join("\n"));
 }
 
-fn update_disasm_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut Chip8State) {
+fn update_disasm_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut UIState) {
     let a: Vec<(Opcode, u16)> = Disasm::disasm(&bytes);
 
     let b: Vec<String> = a.iter().enumerate().map(|(i, op)| format!("0x{:03x} {:02X?} {:02X?}  {}", addr as usize + i * 2,
@@ -262,20 +286,44 @@ fn update_disasm_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut Chip8State) {
     chip8_state.disasm_textbox.push_str(&b.join("\n"));
 }
 
-fn update_mem_dump_view(addr: u16, bytes: Vec<u8>, chip8_state: &mut Chip8State) {
-    let width = 12;
-    let mut f = String::new();
+fn update_mem_dump_view(addr: u16, bytes: Vec<u8>, ui_state: &mut UIState) {
+    let mem_dump_canvas_width = ui_state.window_width as f32 * HORIZONTAL_SPLIT_RATIO;
+    let mem_dump_canvas_height = ui_state.window_height as f32 * HORIZONTAL_SPLIT_RATIO;
 
+    let width = (mem_dump_canvas_width * MEM_VIEW_WIDTH_FONT_RATIO) as usize;
+    let height = (mem_dump_canvas_height * MEM_VIEW_HEIGHT_FONT_RATIO) as usize;
+
+    let mut f = String::new();
+    let mut add = String::new();
+    let mut byt = String::new();
+    let mut ascii = String::new();
+
+    let mut aaa = 0;
     for i in 0..(bytes.len() / width) {
-        f.push_str(&format!("0x{:03x}  ", addr as usize + (i * width)));
-        for i in &bytes[width * i..(width * i) + width] {
-            f.push_str(&format!("{:02X?} ", i));
+
+        if aaa == height {
+            break;
         }
-        f.push_str("\n");
+
+        aaa += 1;
+
+        add.clear();
+        byt.clear();
+        ascii.clear();
+        add.push_str(&format!("{:03X}", addr as usize + (i * width)));
+
+        for i in &bytes[width * i..(width * i) + width] {
+            byt.push_str(&format!("{:02X?} ", i));
+        }
+
+        for i in &bytes[width * i..(width * i) + width] {
+            ascii.push_str(&format!("{0: <1} ", if i.is_ascii() { i.clone() as char } else { '.' }));
+        }
+        f.push_str(&format!("{0}  {1} {2}\n", add, byt, ascii));
     }
 
-    chip8_state.mem_dump_textbox.clear();
-    chip8_state.mem_dump_textbox.push_str(&f);
+    ui_state.mem_dump_textbox.clear();
+    ui_state.mem_dump_textbox.push_str(&f);
 }
 
 widget_ids! {
